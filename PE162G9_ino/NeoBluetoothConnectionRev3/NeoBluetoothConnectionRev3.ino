@@ -1,23 +1,15 @@
-//https://sites.google.com/site/toucatronic/arduino/arduino---manipulando-obj-string
-//https://www.arduino.cc/en/Tutorial/StringSubstring
-//https://www.arduino.cc/en/Tutorial/StringStartsWithEndsWith
-//https://www.arduino.cc/en/Tutorial/StringComparisonOperators
-
-/*
-1---------1200
-2---------2400
-3---------4800
-4---------9600
-5---------19200
-6---------38400
-7---------57600
-8---------115200
-*/
+/**
+ * Bluetooth communication using the BlueSMiRF module.
+ * 
+ * Author: Hayk Martirosyan
+ */
 
 #include <SoftwareSerial.h>
 #include <Servo.h>
 
-SoftwareSerial serialBt(8, 9); //RX TX
+// Set to match your hardware
+int RX_PIN = 8;
+int TX_PIN = 9;
 
 Servo srvMotor1;
 Servo srvMotor2;
@@ -25,7 +17,7 @@ int posServo;
 
 String data = "";
 
-String sensorValues[3];
+String sensorValues[5];
 int sensorIndex;
 int index;
 boolean reading;
@@ -44,54 +36,57 @@ int deltaAzimuth = 0;
 int oldDeltaAzimuth = 0;
 int deltaRoll = 0;
 int oldDeltaRoll = 0;
-int range = 3;
+int range = 5;
+int maxRange = 50;
+int aux = 0;
 
 boolean isHighAzimuth = true;
 boolean isHighRoll = true;
 
 String ang = "";
 
+// Serial interface for the BlueSMiRF
+SoftwareSerial bluetooth(RX_PIN, TX_PIN);
+
+// Send and receive buffers
+String bluetooth_rx_buffer = "";
+String bluetooth_tx_buffer = "";
+
+// Delimiter used to separate messages
+char DELIMITER = '&';
+
 void setup() {
+  
+  // Start USB communication
+  Serial.begin(19200);
+  
+  // Uncomment this only once, when configuring a new BlueSMiRF
+  //set_bluetooth_baudrate();
   srvMotor1.attach(3);
   srvMotor2.attach(4);
   srvMotor1.write(90);
   srvMotor2.write(90);
-  Serial.begin(19200);
-  serialBt.begin(19200);
-
   sensorIndex = 0;
   index = 0;
   reading = true;
   startValue = true;
   delay(200);
-}
-
-void loop() {
-
-  if (serialBt.available()) {
-    while(serialBt.available()){
-      
-    data += (char)serialBt.read();
-    }
-    parseReadBuffer();
-  }
+  // Start bluetooth communication
+  bluetooth.begin(19200);
   
-    if(sensorValues [0] != "") {
-      
-      //Serial.print("String (Azimuth): ");
-      //Serial.println(sensorValues[2]);
-      /*Serial.print("String (Pitch): ");
-      Serial.println(sensorValues[1]);
-      Serial.print("String (Roll): ");
-      Serial.println(sensorValues[2]);*/
-    }
-  //data = "";  
-  //delay(10);
+  Serial.println("Initialized.");
 }
 
+/**
+ * Called when a complete message is received.
+ */
 void gotMessage(String message) {
-
-    switch(sensorIndex){
+  
+  Serial.println("[RECV] " + message);
+  //delay(1000);
+  
+  // Do something!
+  switch(sensorIndex){
       
         case 0: 
           sensorValues[0] = message;
@@ -103,41 +98,111 @@ void gotMessage(String message) {
           break; 
         case 2:
           sensorValues[2] = message;
-          sensorIndex = 0;
+          //motorsRotation(sensorValues[0].toInt(), sensorValues[2].toInt());
           motorsRotation(sensorValues[0].toInt(), sensorValues[2].toInt());
+          sensorIndex = 0;
           break;  
       }
 
-      if(sensorValues [0] != "") {
-      
-      Serial.print("String (Azimuth): ");
-      Serial.println(sensorValues[2]);
-      /*Serial.print("String (Pitch): ");
-      Serial.println(sensorValues[1]);
-      Serial.print("String (Roll): ");
-      Serial.println(sensorValues[2]);*/
-      delay(20);
+    if(message.charAt(0) == '$') {
+      setInitialValue(sensorValues[0],sensorValues[2]);
     }
-      if(sensorValues[0] != "") {
-
-        //motorsRotation(sensorValues[0].toInt(), sensorValues[2].toInt());
-      }
-      
 }
 
+/**
+ * Finds complete messages from the rx buffer.
+ */
 void parseReadBuffer() {
   
-  int endValue = data.indexOf('&');
-  if (endValue == -1) return;
+  // Find the first delimiter in the buffer
+  int inx = bluetooth_rx_buffer.indexOf(DELIMITER);
   
-  String sensorValue = data.substring(0, endValue);
+  // If there is none, exit
+  if (inx == -1) return;
   
-  data = data.substring(endValue + 1);
-
-  gotMessage(sensorValue);
+  // Get the complete message, minus the delimiter
+  String s = bluetooth_rx_buffer.substring(0, inx);
   
+  // Remove the message from the buffer
+  bluetooth_rx_buffer = bluetooth_rx_buffer.substring(inx + 1);
+  
+  // Process the message
+  gotMessage(s);
+  
+  // Look for more complete messages
   parseReadBuffer();
 }
+
+void parseWriteBuffer() {
+  
+  // Find the first delimiter in the buffer
+  int inx = bluetooth_tx_buffer.indexOf(DELIMITER);
+  
+  // If there is none, exit
+  if (inx == -1) return;
+  
+  // Get the complete message, including the delimiter
+  String message = bluetooth_tx_buffer.substring(0, inx + 1);
+  
+  // Remove the message from the buffer
+  bluetooth_tx_buffer = bluetooth_tx_buffer.substring(inx + 1);
+  
+  // Send off the message
+  bluetooth.print(message);
+  //Serial.print("[SENT] " + message);
+  
+  // Look for more
+  parseWriteBuffer();
+}
+
+/**
+ * Continuously sends messages sent from USB and reads in messages from
+ * the Bluetooth connection.
+ */
+void loop() {
+  
+  // Forward anything received via USB to bluetooth
+  if(Serial.available()) {
+    
+    while(Serial.available()) {
+      bluetooth_tx_buffer += (char)Serial.read();
+    }
+
+    Serial.println(bluetooth_tx_buffer);
+    // Look for complete messages
+    parseWriteBuffer();
+  }
+  
+  // Add bytes received over bluetooth to the buffer
+  if(bluetooth.available()) {
+    
+    while(bluetooth.available()) {
+      bluetooth_rx_buffer += (char)bluetooth.read();
+    }
+    // Look for complete messages
+    parseReadBuffer();
+  }
+}
+
+//TODO: Adaptar LowPass para o arduino
+/*
+float lowPass( float input[], float output[] ) {
+    if ( output == null ) return input;
+    for ( int i=0; i<input.length; i++ ) {
+        output[i] = output[i] + ALPHA * (input[i] - output[i]);
+    }
+    return output;
+  }*/
+
+
+
+void setInitialValue(String azimuth, String roll) {
+
+  azimuthZero = azimuth.toInt();
+  rollZero = roll.toInt();
+  
+}
+
 
 int motorsRotation(int azimuth, int roll){
 
@@ -159,11 +224,11 @@ int motorsRotation(int azimuth, int roll){
         Serial.println(newRoll);
         Serial.print("rZ: ");
         Serial.println(rollZero);
-        delay(20);
+        //delay(10);
 
         if(azimuthZero > 90 && isHighAzimuth && newAzimuth < 0){
 
-            newAzimuth = (180 + (-newAzimuth));
+            newAzimuth = (360 + (newAzimuth));
             Serial.print("AzimuthModulo: ");
             Serial.println(newAzimuth); 
           }
@@ -175,8 +240,8 @@ int motorsRotation(int azimuth, int roll){
           Serial.println(deltaAzimuth);
           if(((deltaAzimuth - oldDeltaAzimuth) > range) || ((oldDeltaAzimuth - deltaAzimuth) > range)){
             
-            srvMotor1.write(90 + deltaAzimuth);
-            delay(50);
+            //srvMotor1.write(90 + deltaAzimuth);
+            delay(100);
             oldDeltaAzimuth = deltaAzimuth;
             isHighAzimuth = true;
           }
@@ -189,8 +254,8 @@ int motorsRotation(int azimuth, int roll){
           Serial.println(deltaAzimuth);
            if(((deltaAzimuth - oldDeltaAzimuth) > range) || ((oldDeltaAzimuth - deltaAzimuth) > range)){
 
-              srvMotor1.write(90 - deltaAzimuth);
-              delay(50);
+            //  srvMotor1.write(90 - deltaAzimuth);
+              //delay(50);
               oldDeltaAzimuth = deltaAzimuth;
               isHighAzimuth = false;
             }
@@ -211,8 +276,8 @@ int motorsRotation(int azimuth, int roll){
           Serial.println(deltaRoll);
           if(((deltaRoll - oldDeltaRoll) > range) || ((oldDeltaRoll - deltaRoll) > range)){
             
-            srvMotor2.write(90 + deltaRoll);
-            delay(50);
+            //srvMotor2.write(90 + deltaRoll);
+            //delay(50);
             oldDeltaRoll = deltaRoll;
             isHighRoll = true;
           }
@@ -225,12 +290,11 @@ int motorsRotation(int azimuth, int roll){
           Serial.println(deltaRoll);
            if(((deltaRoll - oldDeltaRoll) > range) || ((oldDeltaRoll - deltaRoll) > range)){
 
-              srvMotor2.write(90 - deltaRoll);
-              delay(50);
+              //srvMotor2.write(90 - deltaRoll);
+              //delay(50);
               oldDeltaAzimuth = deltaRoll;
               isHighRoll = false;
             }
          }
   }
 }
-
