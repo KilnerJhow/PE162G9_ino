@@ -1,7 +1,7 @@
 /**
- * Bluetooth communication using the BlueSMiRF module.
+ * code by KilnerJhow and sandieg2k
  * 
- * Author: Hayk Martirosyan
+ * Credits to Hayk Martirosyan for creat Bluetooth communication using the BlueSMiRF module.
  */
 
 #include <SoftwareSerial.h>
@@ -11,37 +11,36 @@
 int RX_PIN = 8;
 int TX_PIN = 9;
 
-Servo srvMotor1;
-Servo srvMotor2;
-int posServo;
+Servo srvMotor1; //Horizontal servo
+Servo srvMotor2; //Verical servo
 
-String data = "";
+String data = "";//Stores the value received by bluetooth
 
-String sensorValues[5];
+String sensorValues[5];//Stores each value of the magnetic sensor
 int sensorIndex;
 int index;
 boolean reading;
-boolean startValue;
+boolean startValue;//Used to define the initial values(Azimuth and Roll)
 
 float srvMotor1Value;
 float srvMotor2Value;
 
 
-int azimuthZero = 0;
-int rollZero = 0;
+int azimuthZero = 0;//Initual value of azimuth
+int rollZero = 0;//Initial value of roll
 int rotateSrvMotor1 = 0;
-int newAzimuth, newRoll;
+int newAzimuth, newRoll;//New values of azimuth and roll, update each time the sensor value change
 
-int deltaAzimuth = 0;
-int oldDeltaAzimuth = 0;
+int deltaAzimuth = 0;//Difference between newAzimuth and azimuthZero
+int oldDeltaAzimuth = 0;//The last deltaAzimuth value written in srvMotor1 
 int deltaRoll = 0;
 int oldDeltaRoll = 0;
-int range = 5;
-int maxRange = 50;
+int range = 5;//Min. variation of angle to rotate srvMotor1 ou srvMotor2
+int maxRange = 50;//Max variation of angle to rotate srvMotor1 or srvMotor2 (unused in this moment)
 int aux = 0;
 
-boolean isHighAzimuth = true;
-boolean isHighRoll = true;
+boolean isHighAzimuth = true;//To verify if actual azimuth value is higher than the old azimuth value
+boolean isHighRoll = true;//To verify if actual roll value is higher than the old roll value
 
 String ang = "";
 
@@ -196,20 +195,18 @@ float lowPass( float input[], float output[] ) {
 
 
 
-void setInitialValue(String azimuth, String roll) {
+void setInitialValue(int azimuth, int roll) {
 
   azimuthZero = azimuth.toInt();
-  rollZero = roll.toInt();
-  
+  rollZero = roll.toInt();  
 }
 
 
-int motorsRotation(int azimuth, int roll){
+void motorsRotation(int azimuth, int roll){
 
   if (startValue == true){
     
-    azimuthZero = azimuth;
-    rollZero = roll;
+    setInitialValue(azimuth, roll);
     startValue = false;
     }else{
       
